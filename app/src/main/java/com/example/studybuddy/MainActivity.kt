@@ -20,6 +20,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -27,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.studybuddy.ui.theme.StudyBuddyTheme
+import com.google.firebase.auth.FirebaseAuth
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -34,44 +36,86 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             StudyBuddyTheme {
-                var selectedTab by remember { mutableIntStateOf(0) }
-                val tabs = listOf("Home", "Progress", "Schedule", "Settings")
-                Scaffold(
-                    bottomBar = {
-                        NavigationBar {
-                            NavigationBarItem(
-                                selected = selectedTab == 0,
-                                onClick = { selectedTab = 0 },
-                                icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                                label = { Text("Home") }
-                            )
-                            NavigationBarItem(
-                                selected = selectedTab == 1,
-                                onClick = { selectedTab = 1 },
-                                icon = { Icon(Icons.Default.ShowChart, contentDescription = "Progress") },
-                                label = { Text("Progress") }
-                            )
-                            NavigationBarItem(
-                                selected = selectedTab == 2,
-                                onClick = { selectedTab = 2 },
-                                icon = { Icon(Icons.Default.DateRange, contentDescription = "Schedule") },
-                                label = { Text("Schedule") }
-                            )
-                            NavigationBarItem(
-                                selected = selectedTab == 3,
-                                onClick = { selectedTab = 3 },
-                                icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                                label = { Text("Settings") }
-                            )
-                        }
+                var showLogin by remember { mutableStateOf(true) }
+                var showSignUp by remember { mutableStateOf(false) }
+                var isLoggedIn by remember {
+                    mutableStateOf(FirebaseAuth.getInstance().currentUser != null)
+                }
+                if (!isLoggedIn) {
+                    if (showSignUp) {
+                        SignUpScreen(
+                            onSignUpSuccess = {
+                                isLoggedIn = true
+                                showSignUp = false
+                            },
+                            onNavigateToLogin = {
+                                showSignUp = false
+                                showLogin = true
+                            }
+                        )
+                    } else {
+                        LoginScreen(
+                            onLoginSuccess = {
+                                isLoggedIn = true
+                                showLogin = false
+                            },
+                            onNavigateToSignUp = {
+                                showSignUp = true
+                                showLogin = false
+                            },
+                            onForgotPassword = {
+                                // TODO: Implement password reset
+                            }
+                        )
                     }
-                ) { innerPadding ->
-                    Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
-                        when (selectedTab) {
-                            0 -> HomeScreen()
-                            1 -> ProgressScreen()
-                            2 -> ScheduleScreen()
-                            3 -> SettingsScreen()
+                } else {
+                    var selectedTab by remember { mutableIntStateOf(0) }
+                    val tabs = listOf("Home", "Progress", "Schedule", "Settings")
+                    Scaffold(
+                        bottomBar = {
+                            NavigationBar {
+                                NavigationBarItem(
+                                    selected = selectedTab == 0,
+                                    onClick = { selectedTab = 0 },
+                                    icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                                    label = { Text("Home") }
+                                )
+                                NavigationBarItem(
+                                    selected = selectedTab == 1,
+                                    onClick = { selectedTab = 1 },
+                                    icon = { Icon(Icons.Default.ShowChart, contentDescription = "Progress") },
+                                    label = { Text("Progress") }
+                                )
+                                NavigationBarItem(
+                                    selected = selectedTab == 2,
+                                    onClick = { selectedTab = 2 },
+                                    icon = { Icon(Icons.Default.DateRange, contentDescription = "Schedule") },
+                                    label = { Text("Schedule") }
+                                )
+                                NavigationBarItem(
+                                    selected = selectedTab == 3,
+                                    onClick = { selectedTab = 3 },
+                                    icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                                    label = { Text("Settings") }
+                                )
+                            }
+                        }
+                    ) { innerPadding ->
+                        Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+                            when (selectedTab) {
+                                0 -> HomeScreen()
+                                1 -> ProgressScreen()
+                                2 -> ScheduleScreen()
+                                3 -> SettingsScreen(
+                                    onNavigate = { dest ->
+                                        if (dest == "logout") {
+                                            FirebaseAuth.getInstance().signOut()
+                                            isLoggedIn = false
+                                            showLogin = true
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
                 }

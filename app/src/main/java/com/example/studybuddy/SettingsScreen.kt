@@ -65,7 +65,8 @@ fun SettingsScreen(
             Button(
                 onClick = {
                     Toast.makeText(context, "Logged out", Toast.LENGTH_SHORT).show()
-                    // Add logout logic here
+                    com.google.firebase.auth.FirebaseAuth.getInstance().signOut()
+                    onNavigate("logout")
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {

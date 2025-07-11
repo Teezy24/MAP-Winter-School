@@ -14,6 +14,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
@@ -28,6 +30,17 @@ fun HomeScreen(
 ) {
     val today = remember { LocalDate.now() }
     var selectedDate by remember { mutableStateOf(today) }
+    val userId = FirebaseAuth.getInstance().currentUser?.uid
+    var username by remember { mutableStateOf<String?>(null) }
+    val db = remember { FirebaseFirestore.getInstance() }
+
+    LaunchedEffect(userId) {
+        userId?.let {
+            db.collection("users").document(it).get().addOnSuccessListener { doc ->
+                username = doc.getString("username")
+            }
+        }
+    }
 
     Scaffold()
     { innerPadding ->
@@ -37,7 +50,11 @@ fun HomeScreen(
                 .padding(16.dp)
                 .fillMaxSize()
         ) {
-            Text("Hello, Student 👋", fontSize = 24.sp, color = MaterialTheme.colorScheme.primary)
+            Text(
+                text = "Hello, ${username ?: "Student"} 👋",
+                fontSize = 24.sp,
+                color = MaterialTheme.colorScheme.primary
+            )
             Spacer(modifier = Modifier.height(16.dp))
 
             Text("Coming up", fontSize = 20.sp)
