@@ -12,6 +12,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -22,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.studybuddy.ui.theme.StudyBuddyTheme
@@ -35,20 +37,36 @@ class MainActivity : ComponentActivity() {
                 var selectedTab by remember { mutableIntStateOf(0) }
                 val tabs = listOf("Home", "Progress", "Schedule", "Settings")
                 Scaffold(
-                    modifier = Modifier.fillMaxSize(),
                     bottomBar = {
-                        BottomNavigationBar(
-                            tabs = tabs,
-                            selectedTab = selectedTab,
-                            onTabSelected = { selectedTab = it }
-                        )
+                        NavigationBar {
+                            NavigationBarItem(
+                                selected = selectedTab == 0,
+                                onClick = { selectedTab = 0 },
+                                icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                                label = { Text("Home") }
+                            )
+                            NavigationBarItem(
+                                selected = selectedTab == 1,
+                                onClick = { selectedTab = 1 },
+                                icon = { Icon(Icons.Default.ShowChart, contentDescription = "Progress") },
+                                label = { Text("Progress") }
+                            )
+                            NavigationBarItem(
+                                selected = selectedTab == 2,
+                                onClick = { selectedTab = 2 },
+                                icon = { Icon(Icons.Default.DateRange, contentDescription = "Schedule") },
+                                label = { Text("Schedule") }
+                            )
+                            NavigationBarItem(
+                                selected = selectedTab == 3,
+                                onClick = { selectedTab = 3 },
+                                icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                                label = { Text("Settings") }
+                            )
+                        }
                     }
                 ) { innerPadding ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(innerPadding)
-                    ) {
+                    Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
                         when (selectedTab) {
                             0 -> HomeScreen()
                             1 -> ProgressScreen()
@@ -87,36 +105,3 @@ fun BottomNavigationBar(
         }
     }
 }
-
-@Preview(showBackground = true)
-@Composable
-fun StudyBuddyPreview() {
-    StudyBuddyTheme {
-        var selectedTab by remember { mutableIntStateOf(0) }
-        val tabs = listOf("Home", "Progress", "Schedule", "Settings")
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            bottomBar = {
-                BottomNavigationBar(
-                    tabs = tabs,
-                    selectedTab = selectedTab,
-                    onTabSelected = { selectedTab = it }
-                )
-            }
-        ) { innerPadding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) {
-                when (selectedTab) {
-                    0 -> HomeScreen()
-                    1 -> ProgressScreen()
-                    2 -> ScheduleScreen()
-                    3 -> SettingsScreen()
-                }
-            }
-        }
-    }
-}
-
