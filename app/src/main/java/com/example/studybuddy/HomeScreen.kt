@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,10 +17,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
@@ -34,8 +43,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import java.time.DayOfWeek
@@ -82,6 +93,16 @@ fun HomeScreen(
     var sessions by remember { mutableStateOf(listOf<Session>()) }
     var sessionsLoading by remember { mutableStateOf(true) }
     var sessionsError by remember { mutableStateOf<String?>(null) }
+
+    // Profile state
+    var showProfile by remember { mutableStateOf(false) }
+    var userEmail by remember { mutableStateOf<String?>(null) }
+    var userInfoLoading by remember { mutableStateOf(false) }
+    var userInfoError by remember { mutableStateOf<String?>(null) }
+    var editableUsername by remember { mutableStateOf<String?>(null) }
+    var saveInProgress by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
+    var saveSuccess by remember { mutableStateOf(false) }
 
     // Fetch username
     LaunchedEffect(userId) {
@@ -172,6 +193,49 @@ fun HomeScreen(
         }
     }
 
+    // Fetch username and email for profile popup
+    fun fetchUserInfo() {
+        val userId = FirebaseAuth.getInstance().currentUser?.uid
+        if (userId != null) {
+            userInfoLoading = true
+            userInfoError = null
+            FirebaseFirestore.getInstance().collection("users").document(userId).get()
+                .addOnSuccessListener { doc ->
+                    username = doc.getString("username")
+                    editableUsername = username
+                    userEmail = doc.getString("email")
+                    userInfoLoading = false
+                }
+                .addOnFailureListener { e ->
+                    userInfoError = "Failed to load user info"
+                    userInfoLoading = false
+                }
+        }
+    }
+
+    // Save edited username
+    fun saveUsername() {
+        val userId = FirebaseAuth.getInstance().currentUser?.uid
+        val newUsername = editableUsername?.trim()
+        if (userId != null && !newUsername.isNullOrBlank()) {
+            saveInProgress = true
+            saveError = null
+            saveSuccess = false
+            // With open rules, just update
+            FirebaseFirestore.getInstance().collection("users").document(userId)
+                .update("username", newUsername)
+                .addOnSuccessListener {
+                    username = newUsername
+                    saveSuccess = true
+                    saveInProgress = false
+                }
+                .addOnFailureListener { e ->
+                    saveError = "Failed to save username"
+                    saveInProgress = false
+                }
+        }
+    }
+
     Scaffold { innerPadding ->
         LazyColumn(
             modifier = Modifier
@@ -180,28 +244,49 @@ fun HomeScreen(
                 .fillMaxSize()
         ) {
             item {
-                // Username greeting with loading/error
-                when {
-                    usernameLoading -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Loading...", fontSize = 20.sp)
+                // Username greeting with loading/error and profile icon
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    when {
+                        usernameLoading -> {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Loading...", fontSize = 20.sp)
+                            }
+                        }
+                        usernameError != null -> {
+                            Text(
+                                text = usernameError ?: "",
+                                color = Color.Red,
+                                fontSize = 20.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        else -> {
+                            Text(
+                                text = "Hello, ${username ?: "Student"} 👋",
+                                fontSize = 24.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
-                    usernameError != null -> {
-                        Text(
-                            text = usernameError ?: "",
-                            color = Color.Red,
-                            fontSize = 20.sp
-                        )
-                    }
-                    else -> {
-                        Text(
-                            text = "Hello, ${username ?: "Student"} 👋",
-                            fontSize = 24.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
+                    // Profile icon
+                    IconButton(
+                        onClick = {
+                            if (!showProfile) fetchUserInfo()
+                            showProfile = !showProfile
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AccountCircle,
+                            contentDescription = "Profile",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(36.dp)
                         )
                     }
                 }
@@ -392,6 +477,120 @@ fun HomeScreen(
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+
+        // Profile popup dialog
+        if (showProfile) {
+            Dialog(
+                onDismissRequest = { showProfile = false }
+            ) {
+                Surface(
+                    shape = MaterialTheme.shapes.large,
+                    tonalElevation = 8.dp,
+                    modifier = Modifier
+                        .fillMaxWidth(0.85f)
+                        .fillMaxHeight(0.75f)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.background)
+                            .padding(24.dp)
+                            .fillMaxSize(),
+                        verticalArrangement = Arrangement.Top,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Profile",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            IconButton(
+                                onClick = { showProfile = false }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AccountCircle,
+                                    contentDescription = "Close Profile",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        if (userInfoLoading) {
+                            CircularProgressIndicator()
+                        } else if (userInfoError != null) {
+                            Text(
+                                text = userInfoError ?: "",
+                                color = Color.Red,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        } else {
+                            OutlinedTextField(
+                                value = editableUsername ?: "",
+                                onValueChange = {
+                                    editableUsername = it
+                                    saveError = null
+                                    saveSuccess = false
+                                },
+                                label = { Text("Username") },
+                                enabled = !saveInProgress,
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            OutlinedTextField(
+                                value = userEmail ?: "",
+                                onValueChange = {},
+                                label = { Text("Email") },
+                                enabled = false,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            if (saveError != null) {
+                                Text(
+                                    text = saveError ?: "",
+                                    color = Color.Red,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                            if (saveSuccess) {
+                                Text(
+                                    text = "Username updated!",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
+                            Button(
+                                onClick = { saveUsername() },
+                                enabled = !saveInProgress && !editableUsername.isNullOrBlank() && editableUsername != username,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                            ) {
+                                if (saveInProgress) {
+                                    CircularProgressIndicator(
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Text("Save")
+                            }
+                        }
+                        Spacer(modifier = Modifier.weight(1f))
+                        Button(
+                            onClick = { showProfile = false },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Close")
+                        }
+                    }
+                }
             }
         }
     }
