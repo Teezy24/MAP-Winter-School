@@ -35,24 +35,29 @@ private val LightColorScheme = lightColorScheme(
 
 @Composable
 fun StudyBuddyTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
+    isDarkMode: Boolean,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+    val colorScheme = if (isDarkMode) {
+        darkColorScheme(
+            background = DarkBackground,
+            primary = DarkPrimary,
+            onPrimary = DarkOnPrimary,
+            surface = DarkBackground,
+            onSurface = DarkOnPrimary
+        )
+    } else {
+        lightColorScheme(
+            background = LightBackground,
+            primary = LightPrimary,
+            onPrimary = LightOnPrimary,
+            surface = LightBackground,
+            onSurface = LightOnPrimary
+        )
     }
-
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
+        typography = MaterialTheme.typography,
         content = content
     )
 }

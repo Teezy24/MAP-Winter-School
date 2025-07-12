@@ -1,6 +1,8 @@
 package com.example.studybuddy
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,19 +13,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -33,8 +36,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
@@ -44,7 +50,8 @@ import com.google.firebase.firestore.Query
 @Composable
 fun ProgressScreen(
     onNavigate: (String) -> Unit = {},
-    selected: String = "progress"
+    selected: String = "progress",
+    chartColors: List<Color> = listOf(Color(0xFF4CAF50), Color(0xFFFFC107)) // fallback
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     var newGoalText by remember { mutableStateOf("") }
@@ -139,6 +146,15 @@ fun ProgressScreen(
         }
     }
 
+    // Pie chart data calculation
+    val completedCount = goals.count { it.completed }
+    val incompleteCount = goals.count { !it.completed }
+    val totalCount = goals.size
+    val chartData = listOf(
+        PieChartData("Completed", completedCount, chartColors.getOrElse(0) { Color(0xFF4CAF50) }),
+        PieChartData("Incomplete", incompleteCount, chartColors.getOrElse(1) { Color(0xFFFFC107) })
+    )
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
@@ -191,14 +207,40 @@ fun ProgressScreen(
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
-            Box(
+            // Pie Chart
+            PieChart(
+                data = chartData,
+                total = totalCount,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(200.dp)
-                    .background(Color.LightGray, shape = RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center
+                    .height(220.dp)
+                    .align(Alignment.CenterHorizontally)
+            )
+            // Legend/Key
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
             ) {
-                Text("[Pie Chart Placeholder]", color = Color.DarkGray)
+                chartData.forEach { entry ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    ) {
+                        Box(
+                            Modifier
+                                .size(16.dp)
+                                .background(entry.color, shape = CircleShape)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            "${entry.label} (${entry.value})",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
             }
         }
     }
@@ -211,6 +253,40 @@ data class Goal(
     val completed: Boolean
 )
 
+data class PieChartData(val label: String, val value: Int, val color: Color)
+
+@Composable
+fun PieChart(
+    data: List<PieChartData>,
+    total: Int,
+    modifier: Modifier = Modifier
+) {
+    if (total == 0) {
+        Box(
+            modifier = modifier,
+            contentAlignment = Alignment.Center
+        ) {
+            Text("No data to display", color = Color.Gray, textAlign = TextAlign.Center)
+        }
+        return
+    }
+    Canvas(modifier = modifier) {
+        var startAngle = -90f
+        data.forEach { entry ->
+            val sweepAngle = if (total == 0) 0f else (entry.value / total.toFloat()) * 360f
+            drawArc(
+                color = entry.color,
+                startAngle = startAngle,
+                sweepAngle = sweepAngle,
+                useCenter = true,
+                size = Size(size.minDimension, size.minDimension)
+            )
+            startAngle += sweepAngle
+        }
+    }
+}
+
+// Circular Checkbox for ProgressScreen
 @Composable
 fun GoalProgressItem(
     goal: Goal,
@@ -223,9 +299,12 @@ fun GoalProgressItem(
             modifier = Modifier
                 .fillMaxWidth()
         ) {
-            Checkbox(
-                checked = goal.completed,
-                onCheckedChange = onCheckedChange
+            TriStateCheckbox(
+                state = if (goal.completed) androidx.compose.ui.state.ToggleableState.On else androidx.compose.ui.state.ToggleableState.Off,
+                onClick = { onCheckedChange(!goal.completed) },
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
             )
             Text(
                 text = goal.text,
@@ -252,3 +331,5 @@ fun GoalProgressItem(
         )
     }
 }
+
+// All data operations use FirebaseFirestore

@@ -56,20 +56,13 @@ dependencies {
     // Material icons extended for ShowChart, Schedule, etc.
     implementation("androidx.compose.material:material-icons-extended")
 
-    //firbase
+    // Firebase BoM and Firestore only
     implementation(platform("com.google.firebase:firebase-bom:33.16.0"))
-
-    // When using the BoM, you don't specify versions in Firebase library dependencies
-
-    // Add the dependency for the Firebase SDK for Google Analytics
     implementation("com.google.firebase:firebase-analytics")
-
-    // TODO: Add the dependencies for any other Firebase products you want to use
-    // See https://firebase.google.com/docs/android/setup#available-libraries
-    // For example, add the dependencies for Firebase Authentication and Cloud Firestore
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
-
+    implementation("com.google.firebase:firebase-auth-ktx")
+    implementation("com.google.firebase:firebase-firestore-ktx")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
@@ -80,4 +73,3 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
 
 }
-

@@ -96,66 +96,70 @@ fun SignUpScreen(
             return
         }
         isLoading = true
-        // Check if username exists in Firestore
-        db.collection("users").whereEqualTo("username", username).get().addOnSuccessListener { docs ->
-            if (!docs.isEmpty) {
-                errorMessage = "Username already exists."
-                showError = true
-                usernameError = true
-                isLoading = false
-                coroutineScope.launch {
-                    delay(5000)
-                    showError = false
-                }
-            } else {
-                // Username is unique, create user
-                auth.createUserWithEmailAndPassword(email, password)
-                    .addOnCompleteListener { task ->
-                        if (task.isSuccessful) {
-                            val userId = auth.currentUser?.uid
-                            val user = hashMapOf("username" to username, "email" to email)
-                            if (userId != null) {
-                                db.collection("users").document(userId).set(user)
-                                    .addOnSuccessListener {
-                                        errorMessage = "Signup successful! Redirecting..."
+
+        // --- FIX: Allow username check without requiring authentication ---
+        // Instead of checking username before sign up (which requires read permission),
+        // first create the user (so request.auth != null), then check username and write user doc.
+
+        auth.createUserWithEmailAndPassword(email, password)
+            .addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    auth.currentUser?.reload()?.addOnCompleteListener {
+                        val userId = auth.currentUser?.uid
+                        if (userId != null) {
+                            // Now user is authenticated, check if username exists
+                            db.collection("users").whereEqualTo("username", username).get()
+                                .addOnSuccessListener { docs ->
+                                    if (!docs.isEmpty) {
+                                        // Username exists, delete the just-created user and show error
+                                        auth.currentUser?.delete()
+                                        errorMessage = "Username already exists."
                                         showError = true
-                                        isLoading = false
-                                        coroutineScope.launch {
-                                            delay(1500)
-                                            showError = false
-                                            onSignUpSuccess()
-                                        }
-                                    }
-                                    .addOnFailureListener { e ->
-                                        errorMessage = e.localizedMessage ?: "Failed to save user."
-                                        showError = true
+                                        usernameError = true
                                         isLoading = false
                                         coroutineScope.launch {
                                             delay(5000)
                                             showError = false
                                         }
+                                    } else {
+                                        // Username is unique, save user doc
+                                        val user = hashMapOf("username" to username, "email" to email)
+                                        db.collection("users").document(userId).set(user)
+                                            .addOnSuccessListener {
+                                                onSignUpSuccess()
+                                            }
+                                            .addOnFailureListener { e ->
+                                                errorMessage = e.localizedMessage ?: "Failed to save user."
+                                                showError = true
+                                                isLoading = false
+                                                coroutineScope.launch {
+                                                    delay(5000)
+                                                    showError = false
+                                                }
+                                            }
                                     }
-                            }
-                        } else {
-                            errorMessage = task.exception?.localizedMessage ?: "Sign up failed."
-                            showError = true
-                            isLoading = false
-                            coroutineScope.launch {
-                                delay(5000)
-                                showError = false
-                            }
+                                }
+                                .addOnFailureListener { e ->
+                                    errorMessage = e.localizedMessage ?: "Failed to check username."
+                                    showError = true
+                                    isLoading = false
+                                    coroutineScope.launch {
+                                        delay(5000)
+                                        showError = false
+                                    }
+                                }
                         }
                     }
+                } else {
+                    errorMessage = task.exception?.localizedMessage ?: "Sign up failed."
+                    showError = true
+                    isLoading = false
+                    coroutineScope.launch {
+                        delay(5000)
+                        showError = false
+                    }
+                }
             }
-        }.addOnFailureListener { e ->
-            errorMessage = e.localizedMessage ?: "Failed to check username."
-            showError = true
-            isLoading = false
-            coroutineScope.launch {
-                delay(5000)
-                showError = false
-            }
-        }
     }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -274,7 +278,7 @@ fun SignUpScreen(
                 Text("Already have an account? ")
                 Text(
                     text = "Login",
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.primaryContainer,
                     textDecoration = TextDecoration.Underline,
                     modifier = Modifier
                         .clickable(onClick = onNavigateToLogin)
@@ -284,4 +288,3 @@ fun SignUpScreen(
         }
     }
 }
-

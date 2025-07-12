@@ -63,18 +63,19 @@ fun LoginScreen(
             return
         }
         isLoading = true // Start loading
-        if (usernameOrEmail.contains("@")) {
-            // Login with email
+
+        // Check if input is an email
+        val isEmail = usernameOrEmail.contains("@") && usernameOrEmail.contains(".")
+        if (isEmail) {
+            // Login with email directly
             auth.signInWithEmailAndPassword(usernameOrEmail, password)
                 .addOnCompleteListener { task ->
                     isLoading = false // Stop loading
                     if (task.isSuccessful) {
                         onLoginSuccess()
                     } else {
-                        errorMessage = task.exception?.localizedMessage ?: "Invalid credentials."
+                        errorMessage = task.exception?.localizedMessage ?: "Login failed."
                         showError = true
-                        usernameOrEmailError = true
-                        passwordError = true
                         coroutineScope.launch {
                             delay(5000)
                             showError = false
@@ -82,45 +83,44 @@ fun LoginScreen(
                     }
                 }
         } else {
-            // Login with username: lookup email in Firestore
-            db.collection("users").whereEqualTo("username", usernameOrEmail).get().addOnSuccessListener { docs ->
-                if (!docs.isEmpty) {
-                    val email = docs.documents[0].getString("email") ?: ""
-                    auth.signInWithEmailAndPassword(email, password)
-                        .addOnCompleteListener { task ->
-                            isLoading = false // Stop loading
-                            if (task.isSuccessful) {
-                                onLoginSuccess()
-                            } else {
-                                errorMessage = task.exception?.localizedMessage ?: "Invalid credentials."
-                                showError = true
-                                usernameOrEmailError = true
-                                passwordError = true
-                                coroutineScope.launch {
-                                    delay(5000)
-                                    showError = false
+            // Lookup email by username in Firestore
+            db.collection("users").whereEqualTo("username", usernameOrEmail).get()
+                .addOnSuccessListener { docs ->
+                    if (!docs.isEmpty && docs.documents[0].getString("email") != null) {
+                        val email = docs.documents[0].getString("email")!!
+                        auth.signInWithEmailAndPassword(email, password)
+                            .addOnCompleteListener { task ->
+                                isLoading = false
+                                if (task.isSuccessful) {
+                                    onLoginSuccess()
+                                } else {
+                                    errorMessage = task.exception?.localizedMessage ?: "Login failed."
+                                    showError = true
+                                    coroutineScope.launch {
+                                        delay(5000)
+                                        showError = false
+                                    }
                                 }
                             }
+                    } else {
+                        isLoading = false
+                        errorMessage = "Username not found."
+                        showError = true
+                        coroutineScope.launch {
+                            delay(5000)
+                            showError = false
                         }
-                } else {
-                    isLoading = false // Stop loading
-                    errorMessage = "Username not found."
+                    }
+                }
+                .addOnFailureListener { e ->
+                    isLoading = false
+                    errorMessage = e.localizedMessage ?: "Login failed."
                     showError = true
-                    usernameOrEmailError = true
                     coroutineScope.launch {
                         delay(5000)
                         showError = false
                     }
                 }
-            }.addOnFailureListener { e ->
-                isLoading = false // Stop loading
-                errorMessage = e.localizedMessage ?: "Login failed."
-                showError = true
-                coroutineScope.launch {
-                    delay(5000)
-                    showError = false
-                }
-            }
         }
     }
 
@@ -139,7 +139,7 @@ fun LoginScreen(
                     usernameOrEmail = it
                     usernameOrEmailError = false
                 },
-                label = { Text("Username or Email") },
+                label = { Text("Email") },
                 isError = usernameOrEmailError,
                 modifier = Modifier.fillMaxWidth(),
                 // 3. Make single line and set keyboard type

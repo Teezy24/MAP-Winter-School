@@ -36,10 +36,11 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun SettingsScreen(
     selected: String = "settings",
+    isDarkMode: Boolean = false,
+    onDarkModeChange: (Boolean) -> Unit = {},
     onNavigate: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
-    var darkModeEnabled by remember { mutableStateOf(false) }
     var notificationsEnabled by remember { mutableStateOf(true) }
     val snackbarHostState = remember { SnackbarHostState() }
     var showLogoutDialog by remember { mutableStateOf(false) }
@@ -81,8 +82,8 @@ fun SettingsScreen(
                 )
                 Text("Dark Mode", modifier = Modifier.weight(1f))
                 Switch(
-                    checked = darkModeEnabled,
-                    onCheckedChange = { darkModeEnabled = it },
+                    checked = isDarkMode,
+                    onCheckedChange = { onDarkModeChange(it) },
                     thumbContent = null
                 )
             }
