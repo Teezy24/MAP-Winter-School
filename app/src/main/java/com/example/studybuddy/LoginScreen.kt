@@ -24,6 +24,11 @@ import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+// Add these imports for password visibility icons
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit = {},
@@ -40,6 +45,11 @@ fun LoginScreen(
     val auth = remember { FirebaseAuth.getInstance() }
     val db = remember { FirebaseFirestore.getInstance() }
 
+    // 1. Add state for password visibility
+    var passwordVisible by remember { mutableStateOf(false) }
+    // 2. Add state for loading indicator
+    var isLoading by remember { mutableStateOf(false) }
+
     fun validateAndLogin() {
         usernameOrEmailError = usernameOrEmail.isBlank()
         passwordError = password.isBlank()
@@ -52,10 +62,12 @@ fun LoginScreen(
             }
             return
         }
+        isLoading = true // Start loading
         if (usernameOrEmail.contains("@")) {
             // Login with email
             auth.signInWithEmailAndPassword(usernameOrEmail, password)
                 .addOnCompleteListener { task ->
+                    isLoading = false // Stop loading
                     if (task.isSuccessful) {
                         onLoginSuccess()
                     } else {
@@ -76,6 +88,7 @@ fun LoginScreen(
                     val email = docs.documents[0].getString("email") ?: ""
                     auth.signInWithEmailAndPassword(email, password)
                         .addOnCompleteListener { task ->
+                            isLoading = false // Stop loading
                             if (task.isSuccessful) {
                                 onLoginSuccess()
                             } else {
@@ -90,6 +103,7 @@ fun LoginScreen(
                             }
                         }
                 } else {
+                    isLoading = false // Stop loading
                     errorMessage = "Username not found."
                     showError = true
                     usernameOrEmailError = true
@@ -99,6 +113,7 @@ fun LoginScreen(
                     }
                 }
             }.addOnFailureListener { e ->
+                isLoading = false // Stop loading
                 errorMessage = e.localizedMessage ?: "Login failed."
                 showError = true
                 coroutineScope.launch {
@@ -126,7 +141,10 @@ fun LoginScreen(
                 },
                 label = { Text("Username or Email") },
                 isError = usernameOrEmailError,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                // 3. Make single line and set keyboard type
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
             )
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(
@@ -137,8 +155,19 @@ fun LoginScreen(
                 },
                 label = { Text("Password") },
                 isError = passwordError,
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth()
+                // 1. Add password visibility toggle
+                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    val image = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility
+                    val description = if (passwordVisible) "Hide password" else "Show password"
+                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                        Icon(imageVector = image, contentDescription = description)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                // 3. Make single line and set keyboard type
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
             Spacer(modifier = Modifier.height(8.dp))
             TextButton(onClick = onForgotPassword, modifier = Modifier.align(Alignment.End)) {
@@ -147,9 +176,19 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = { validateAndLogin() },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isLoading // Disable while loading
             ) {
-                Text("Login")
+                // 2. Show loading spinner if loading
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Login")
+                }
             }
             Spacer(modifier = Modifier.height(16.dp))
             AnimatedVisibility(visible = showError, enter = fadeIn(), exit = fadeOut()) {
@@ -178,4 +217,3 @@ fun LoginScreen(
         }
     }
 }
-

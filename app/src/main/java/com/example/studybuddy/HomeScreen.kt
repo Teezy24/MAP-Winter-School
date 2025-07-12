@@ -2,25 +2,46 @@ package com.example.studybuddy
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.TextStyle
-import java.util.*
+import java.util.Locale
 
 @Composable
 fun HomeScreen(
@@ -32,49 +53,134 @@ fun HomeScreen(
     var selectedDate by remember { mutableStateOf(today) }
     val userId = FirebaseAuth.getInstance().currentUser?.uid
     var username by remember { mutableStateOf<String?>(null) }
+    var usernameLoading by remember { mutableStateOf(true) }
+    var usernameError by remember { mutableStateOf<String?>(null) }
     val db = remember { FirebaseFirestore.getInstance() }
 
+    // Upcoming events state
+    var upcomingEvents by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var eventsLoading by remember { mutableStateOf(true) }
+    var eventsError by remember { mutableStateOf<String?>(null) }
+
+    // Fetch username
     LaunchedEffect(userId) {
+        usernameLoading = true
+        usernameError = null
         userId?.let {
-            db.collection("users").document(it).get().addOnSuccessListener { doc ->
-                username = doc.getString("username")
-            }
+            db.collection("users").document(it).get()
+                .addOnSuccessListener { doc ->
+                    username = doc.getString("username")
+                    usernameLoading = false
+                }
+                .addOnFailureListener { e ->
+                    usernameError = "Failed to load username"
+                    usernameLoading = false
+                }
         }
     }
 
-    Scaffold()
-    { innerPadding ->
+    // Fetch upcoming events (for today and future)
+    LaunchedEffect(userId) {
+        eventsLoading = true
+        eventsError = null
+        userId?.let {
+            db.collection("events")
+                .whereEqualTo("userId", it)
+                .whereGreaterThanOrEqualTo("date", today.toString())
+                .orderBy("date", Query.Direction.ASCENDING)
+                .limit(5)
+                .get()
+                .addOnSuccessListener { docs ->
+                    upcomingEvents = docs.map { doc ->
+                        val title = doc.getString("title") ?: "Untitled"
+                        val date = doc.getString("date") ?: ""
+                        val time = doc.getString("time") ?: ""
+                        val display = if (date == today.toString()) "Today at $time" else "$date at $time"
+                        title to display
+                    }
+                    eventsLoading = false
+                }
+                .addOnFailureListener { e ->
+                    eventsError = "Failed to load events"
+                    eventsLoading = false
+                }
+        }
+    }
+
+    Scaffold { innerPadding ->
         Column(
             modifier = Modifier
                 .padding(innerPadding)
                 .padding(16.dp)
                 .fillMaxSize()
         ) {
-            Text(
-                text = "Hello, ${username ?: "Student"} 👋",
-                fontSize = 24.sp,
-                color = MaterialTheme.colorScheme.primary
-            )
+            // Username greeting with loading/error
+            when {
+                usernameLoading -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Loading...", fontSize = 20.sp)
+                    }
+                }
+                usernameError != null -> {
+                    Text(
+                        text = usernameError ?: "",
+                        color = Color.Red,
+                        fontSize = 20.sp
+                    )
+                }
+                else -> {
+                    Text(
+                        text = "Hello, ${username ?: "Student"} 👋",
+                        fontSize = 24.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
             Spacer(modifier = Modifier.height(16.dp))
 
-            Text("Coming up", fontSize = 20.sp)
-            LazyColumn(modifier = Modifier.height(100.dp)) {
-                items(2) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(8.dp)) {
-                            Text("Math Revision", fontSize = 16.sp)
-                            Text("Today at 4:00 PM", fontSize = 14.sp, color = Color.Gray)
+            Text("Coming up", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            when {
+                eventsLoading -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Loading events...", fontSize = 16.sp)
+                    }
+                }
+                eventsError != null -> {
+                    Text(
+                        text = eventsError ?: "",
+                        color = Color.Red,
+                        fontSize = 16.sp
+                    )
+                }
+                upcomingEvents.isEmpty() -> {
+                    Text("No upcoming events.", fontSize = 16.sp, color = Color.Gray)
+                }
+                else -> {
+                    LazyColumn(modifier = Modifier.heightIn(max = 120.dp)) {
+                        items(upcomingEvents.size) { idx ->
+                            val (title, display) = upcomingEvents[idx]
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                                    Text(display, fontSize = 14.sp, color = Color.Gray)
+                                }
+                            }
                         }
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-            Text("Calendar", fontSize = 20.sp)
+            Text("Calendar", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
 
             val currentMonth = remember { YearMonth.now() }
             val daysInMonth = remember(currentMonth) { currentMonth.lengthOfMonth() }
@@ -87,7 +193,8 @@ fun HomeScreen(
             Text(
                 text = "${currentMonth.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${currentMonth.year}",
                 modifier = Modifier.padding(8.dp),
-                fontSize = 18.sp
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium
             )
             // Days of week row
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -97,7 +204,7 @@ fun HomeScreen(
                         modifier = Modifier.weight(1f),
                         fontSize = 12.sp,
                         color = Color.Gray,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        textAlign = TextAlign.Center
                     )
                 }
             }
@@ -115,13 +222,18 @@ fun HomeScreen(
                             } else {
                                 val date = daysList[dayIndex]
                                 val isSelected = date == selectedDate
+                                val isToday = date == today
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
                                         .aspectRatio(1f)
                                         .padding(2.dp)
                                         .background(
-                                            if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                            when {
+                                                isSelected -> MaterialTheme.colorScheme.primary
+                                                isToday -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f)
+                                                else -> Color.Transparent
+                                            },
                                             shape = MaterialTheme.shapes.small
                                         )
                                         .clickable { selectedDate = date },
@@ -129,7 +241,11 @@ fun HomeScreen(
                                 ) {
                                     Text(
                                         text = date.dayOfMonth.toString(),
-                                        color = if (isSelected) Color.White else Color.Black,
+                                        color = when {
+                                            isSelected -> Color.White
+                                            isToday -> MaterialTheme.colorScheme.primary
+                                            else -> Color.Black
+                                        },
                                         fontSize = 16.sp
                                     )
                                 }

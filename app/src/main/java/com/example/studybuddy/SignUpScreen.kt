@@ -4,10 +4,33 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -43,6 +66,12 @@ fun SignUpScreen(
     val auth = remember { FirebaseAuth.getInstance() }
     val db = remember { FirebaseFirestore.getInstance() }
 
+    // Password visibility toggles
+    var passwordVisible by remember { mutableStateOf(false) }
+    var retypePasswordVisible by remember { mutableStateOf(false) }
+    // Loading state
+    var isLoading by remember { mutableStateOf(false) }
+
     fun isValidEmail(email: String): Boolean = email.contains("@") && email.contains(".")
     fun isValidPassword(password: String): Boolean = password.length >= 6 && password.any { it.isDigit() }
 
@@ -66,12 +95,14 @@ fun SignUpScreen(
             }
             return
         }
+        isLoading = true
         // Check if username exists in Firestore
         db.collection("users").whereEqualTo("username", username).get().addOnSuccessListener { docs ->
             if (!docs.isEmpty) {
                 errorMessage = "Username already exists."
                 showError = true
                 usernameError = true
+                isLoading = false
                 coroutineScope.launch {
                     delay(5000)
                     showError = false
@@ -86,9 +117,9 @@ fun SignUpScreen(
                             if (userId != null) {
                                 db.collection("users").document(userId).set(user)
                                     .addOnSuccessListener {
-                                        // Show success and redirect to home (logged in)
                                         errorMessage = "Signup successful! Redirecting..."
                                         showError = true
+                                        isLoading = false
                                         coroutineScope.launch {
                                             delay(1500)
                                             showError = false
@@ -98,6 +129,7 @@ fun SignUpScreen(
                                     .addOnFailureListener { e ->
                                         errorMessage = e.localizedMessage ?: "Failed to save user."
                                         showError = true
+                                        isLoading = false
                                         coroutineScope.launch {
                                             delay(5000)
                                             showError = false
@@ -107,6 +139,7 @@ fun SignUpScreen(
                         } else {
                             errorMessage = task.exception?.localizedMessage ?: "Sign up failed."
                             showError = true
+                            isLoading = false
                             coroutineScope.launch {
                                 delay(5000)
                                 showError = false
@@ -117,6 +150,7 @@ fun SignUpScreen(
         }.addOnFailureListener { e ->
             errorMessage = e.localizedMessage ?: "Failed to check username."
             showError = true
+            isLoading = false
             coroutineScope.launch {
                 delay(5000)
                 showError = false
@@ -142,7 +176,8 @@ fun SignUpScreen(
                 label = { Text("Email") },
                 isError = emailError,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
             )
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(
@@ -153,7 +188,8 @@ fun SignUpScreen(
                 },
                 label = { Text("Username") },
                 isError = usernameError,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
             )
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(
@@ -164,9 +200,21 @@ fun SignUpScreen(
                 },
                 label = { Text("Password") },
                 isError = passwordError,
-                visualTransformation = PasswordVisualTransformation(),
+                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    val icon = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility
+                    IconButton(
+                        onClick = { passwordVisible = !passwordVisible }
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = if (passwordVisible) "Hide password" else "Show password"
+                        )
+                    }
+                },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
             )
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(
@@ -177,16 +225,37 @@ fun SignUpScreen(
                 },
                 label = { Text("Re-Type Password") },
                 isError = retypePasswordError,
-                visualTransformation = PasswordVisualTransformation(),
+                visualTransformation = if (retypePasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    val icon = if (retypePasswordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility
+                    IconButton(
+                        onClick = { retypePasswordVisible = !retypePasswordVisible }
+                    ) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = if (retypePasswordVisible) "Hide password" else "Show password"
+                        )
+                    }
+                },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
             )
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = { validateAndSignUp() },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isLoading
             ) {
-                Text("Sign Up")
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text("Sign Up")
+                }
             }
             Spacer(modifier = Modifier.height(16.dp))
             AnimatedVisibility(visible = showError, enter = fadeIn(), exit = fadeOut()) {
