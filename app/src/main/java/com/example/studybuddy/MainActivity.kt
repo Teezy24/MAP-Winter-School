@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.app.NotificationCompat
@@ -87,9 +88,9 @@ class MainActivity : ComponentActivity() {
             }
 
             StudyBuddyTheme(isDarkMode = isDarkMode) {
-                var showLogin by remember { mutableStateOf(true) }
-                var showSignUp by remember { mutableStateOf(false) }
-                var isLoggedIn by remember {
+                var showLogin by rememberSaveable { mutableStateOf(true) }
+                var showSignUp by rememberSaveable { mutableStateOf(false) }
+                var isLoggedIn by rememberSaveable {
                     mutableStateOf(FirebaseAuth.getInstance().currentUser != null)
                 }
                 if (!isLoggedIn) {
@@ -122,7 +123,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 } else {
-                    var selectedTab by remember { mutableIntStateOf(0) }
+                    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
                     val tabs = listOf("Home", "Progress", "Schedule", "Settings")
                     Scaffold(
                         bottomBar = {
@@ -179,6 +180,37 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Log.d("MainActivity", "onStart called")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Log.d("MainActivity", "onResume called")
+    }
+
+    override fun onPause() {
+        super.onPause()
+        Log.d("MainActivity", "onPause called")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        Log.d("MainActivity", "onStop called")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d("MainActivity", "onDestroy called")
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        Log.d("MainActivity", "onConfigurationChanged: orientation=${newConfig.orientation}")
+        // Optionally, handle UI or state changes here if needed
     }
 
     // Request notification permission if needed, then show notification

@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,10 +42,10 @@ fun SettingsScreen(
     onNavigate: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
-    var notificationsEnabled by remember { mutableStateOf(true) }
+    var notificationsEnabled by rememberSaveable { mutableStateOf(true) }
     val snackbarHostState = remember { SnackbarHostState() }
-    var showLogoutDialog by remember { mutableStateOf(false) }
-    var showLoggedOutSnackbar by remember { mutableStateOf(false) }
+    var showLogoutDialog by rememberSaveable { mutableStateOf(false) }
+    var showLoggedOutSnackbar by rememberSaveable { mutableStateOf(false) }
 
     // Show snackbar when needed
     if (showLoggedOutSnackbar) {

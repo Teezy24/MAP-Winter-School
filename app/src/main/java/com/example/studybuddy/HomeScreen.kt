@@ -37,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,10 +72,10 @@ fun HomeScreen(
     onNavigateToSchedule: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {}
 ) {
-    val today = remember { LocalDate.now() }
-    var selectedDate by remember { mutableStateOf(today) }
+    val today = rememberSaveable { LocalDate.now() }
+    var selectedDate by rememberSaveable { mutableStateOf(today) }
     val userId = FirebaseAuth.getInstance().currentUser?.uid
-    var username by remember { mutableStateOf<String?>(null) }
+    var username by rememberSaveable { mutableStateOf<String?>(null) }
     var usernameLoading by remember { mutableStateOf(true) }
     var usernameError by remember { mutableStateOf<String?>(null) }
     val db = remember { FirebaseFirestore.getInstance() }
@@ -95,11 +96,11 @@ fun HomeScreen(
     var sessionsError by remember { mutableStateOf<String?>(null) }
 
     // Profile state
-    var showProfile by remember { mutableStateOf(false) }
-    var userEmail by remember { mutableStateOf<String?>(null) }
+    var showProfile by rememberSaveable { mutableStateOf(false) }
+    var userEmail by rememberSaveable { mutableStateOf<String?>(null) }
     var userInfoLoading by remember { mutableStateOf(false) }
     var userInfoError by remember { mutableStateOf<String?>(null) }
-    var editableUsername by remember { mutableStateOf<String?>(null) }
+    var editableUsername by rememberSaveable { mutableStateOf<String?>(null) }
     var saveInProgress by remember { mutableStateOf(false) }
     var saveError by remember { mutableStateOf<String?>(null) }
     var saveSuccess by remember { mutableStateOf(false) }

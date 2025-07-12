@@ -30,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,11 +50,11 @@ fun ScheduleScreen(
     selected: String = "schedule"
 ) {
     val context = LocalContext.current
-    var subject by remember { mutableStateOf("") }
-    var date by remember { mutableStateOf("") }
-    var startTime by remember { mutableStateOf("") }
-    var endTime by remember { mutableStateOf("") }
-    var duration by remember { mutableStateOf("") }
+    var subject by rememberSaveable { mutableStateOf("") }
+    var date by rememberSaveable { mutableStateOf("") }
+    var startTime by rememberSaveable { mutableStateOf("") }
+    var endTime by rememberSaveable { mutableStateOf("") }
+    var duration by rememberSaveable { mutableStateOf("") }
     val calendar = Calendar.getInstance()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -65,10 +66,10 @@ fun ScheduleScreen(
     var fetchError by remember { mutableStateOf<String?>(null) }
 
     // Validation error state
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Snackbar message state
-    var snackbarMessage by remember { mutableStateOf<String?>(null) }
+    var snackbarMessage by rememberSaveable { mutableStateOf<String?>(null) }
 
     // Add a trigger to refetch sessions
     var refreshSessions by remember { mutableStateOf(false) }

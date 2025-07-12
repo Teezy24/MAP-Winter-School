@@ -33,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,11 +55,11 @@ fun ProgressScreen(
     chartColors: List<Color> = listOf(Color(0xFF4CAF50), Color(0xFFFFC107)) // fallback
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
-    var newGoalText by remember { mutableStateOf("") }
+    var newGoalText by rememberSaveable { mutableStateOf("") }
     val userId = FirebaseAuth.getInstance().currentUser?.uid
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    var snackbarMessage by remember { mutableStateOf<String?>(null) }
+    var snackbarMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var goals by remember { mutableStateOf(listOf<Goal>()) }
     val db = remember { FirebaseFirestore.getInstance() }
 
@@ -136,7 +137,7 @@ fun ProgressScreen(
         }
     }
 
-    var showSnackbar by remember { mutableStateOf(false) }
+    var showSnackbar by rememberSaveable { mutableStateOf(false) }
 
     // Show snackbar message
     if (snackbarMessage != null) {
