@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
@@ -24,6 +25,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,7 +38,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import java.util.Calendar
+
 
 @Composable
 fun ScheduleScreen(
@@ -52,14 +57,56 @@ fun ScheduleScreen(
     val calendar = Calendar.getInstance()
     val snackbarHostState = remember { SnackbarHostState() }
 
+    val userId = FirebaseAuth.getInstance().currentUser?.uid
+    val db = remember { FirebaseFirestore.getInstance() }
     // List of scheduled sessions
     var sessions by remember { mutableStateOf(listOf<Session>()) }
+    var loading by remember { mutableStateOf(true) }
+    var fetchError by remember { mutableStateOf<String?>(null) }
 
     // Validation error state
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     // Snackbar message state
     var snackbarMessage by remember { mutableStateOf<String?>(null) }
+
+    // Add a trigger to refetch sessions
+    var refreshSessions by remember { mutableStateOf(false) }
+
+    // Fetch sessions from Firestore (live, real-time updates)
+    DisposableEffect(userId, refreshSessions) {
+        if (userId == null) {
+            loading = false
+            fetchError = "User not logged in"
+            return@DisposableEffect onDispose { }
+        }
+        loading = true
+        fetchError = null
+        val listener = db.collection("users").document(userId).collection("sessions")
+            .addSnapshotListener { docs, e ->
+                if (e != null) {
+                    fetchError = e.localizedMessage
+                    loading = false
+                    return@addSnapshotListener
+                }
+                if (docs != null) {
+                    sessions = docs.map { doc ->
+                        Session(
+                            id = doc.id,
+                            subject = doc.getString("subject") ?: "",
+                            date = doc.getString("date") ?: "",
+                            startTime = doc.getString("startTime") ?: "",
+                            endTime = doc.getString("endTime") ?: "",
+                            duration = doc.getString("duration") ?: ""
+                        )
+                    }
+                    loading = false
+                }
+            }
+        onDispose {
+            listener.remove()
+        }
+    }
 
     // Show snackbar when message changes
     snackbarMessage?.let { message ->
@@ -174,16 +221,29 @@ fun ScheduleScreen(
                         errorMessage = "Please fill in all fields."
                     } else if (duration.toIntOrNull() == null || duration.toInt() <= 0) {
                         errorMessage = "Duration must be a positive number."
-                    } else {
-                        // Add session
-                        sessions = sessions + Session(subject, date, startTime, endTime, duration)
-                        subject = ""
-                        date = ""
-                        startTime = ""
-                        endTime = ""
-                        duration = ""
-                        errorMessage = null
-                        snackbarMessage = "Study session added!"
+                    } else if (userId != null) {
+                        // Add session to Firestore
+                        val session = hashMapOf(
+                            "subject" to subject,
+                            "date" to date,
+                            "startTime" to startTime,
+                            "endTime" to endTime,
+                            "duration" to duration
+                        )
+                        db.collection("users").document(userId).collection("sessions")
+                            .add(session)
+                            .addOnSuccessListener {
+                                snackbarMessage = "Study session added!"
+                                subject = ""
+                                date = ""
+                                startTime = ""
+                                endTime = ""
+                                duration = ""
+                                errorMessage = null
+                                // Trigger refetch (not strictly needed with snapshot listener, but kept for compatibility)
+                                refreshSessions = !refreshSessions
+                            }
+                            .addOnFailureListener { e -> errorMessage = e.localizedMessage }
                     }
                 },
                 modifier = Modifier.align(Alignment.End)
@@ -199,7 +259,11 @@ fun ScheduleScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // Show scheduled sessions
-            if (sessions.isNotEmpty()) {
+            if (loading) {
+                Text("Loading sessions...", color = MaterialTheme.colorScheme.primary)
+            } else if (fetchError != null) {
+                Text(fetchError ?: "Error", color = MaterialTheme.colorScheme.error)
+            } else if (sessions.isNotEmpty()) {
                 Text(
                     "Scheduled Sessions",
                     fontWeight = FontWeight.Bold,
@@ -209,8 +273,7 @@ fun ScheduleScreen(
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().weight(1f, fill = false)
                 ) {
-                    items(sessions.size) { idx ->
-                        val session = sessions[idx]
+                    items(sessions) { session ->
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -230,16 +293,8 @@ fun ScheduleScreen(
     }
 }
 
-data class Session(
-    val subject: String,
-    val date: String,
-    val startTime: String,
-    val endTime: String,
-    val duration: String
-)
-
 // Helper to calculate duration in minutes from two "HH:mm" strings
-fun calculateDuration(start: String, end: String): String {
+private fun calculateDuration(start: String, end: String): String {
     return try {
         val (sh, sm) = start.split(":").map { it.toInt() }
         val (eh, em) = end.split(":").map { it.toInt() }

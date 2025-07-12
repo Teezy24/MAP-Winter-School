@@ -25,6 +25,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +37,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 
 @Composable
 fun ProgressScreen(
@@ -44,21 +48,93 @@ fun ProgressScreen(
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     var newGoalText by remember { mutableStateOf("") }
-    var goals by remember {
-        mutableStateOf(
-            listOf(
-                Goal("Study 10 hours this week", 0.6f, false),
-                Goal("Complete 3 assignments", 0.3f, false)
-            )
-        )
-    }
-    // Snackbar message state
+    val userId = FirebaseAuth.getInstance().currentUser?.uid
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
     var snackbarMessage by remember { mutableStateOf<String?>(null) }
+    var goals by remember { mutableStateOf(listOf<Goal>()) }
+    val db = remember { FirebaseFirestore.getInstance() }
 
-    // Show snackbar when message changes
-    snackbarMessage?.let { message ->
-        LaunchedEffect(message) {
-            snackbarHostState.showSnackbar(message)
+    // Use DisposableEffect for live updates and proper cleanup
+    DisposableEffect(userId) {
+        loading = true
+        error = null
+        val listener = userId?.let { uid ->
+            db.collection("users").document(uid).collection("goals")
+                .orderBy("completed", Query.Direction.ASCENDING)
+                .addSnapshotListener { docs, e ->
+                    if (e != null) {
+                        error = e.localizedMessage ?: e.message
+                        loading = false
+                        return@addSnapshotListener
+                    }
+                    if (docs != null) {
+                        goals = docs.map { doc ->
+                            Goal(
+                                id = doc.id,
+                                text = doc.getString("text") ?: "",
+                                progress = doc.getDouble("progress")?.toFloat() ?: 0f,
+                                completed = doc.getBoolean("completed") ?: false
+                            )
+                        }
+                        loading = false
+                    }
+                }
+        }
+        onDispose { listener?.remove() }
+    }
+    var refreshGoalsTrigger by remember { mutableStateOf(false) }
+
+    // Add new goal
+    fun addGoal() {
+        if (newGoalText.isNotBlank() && userId != null) {
+            val goal = hashMapOf(
+                "text" to newGoalText,
+                "progress" to 0f,
+                "completed" to false
+            )
+            db.collection("users").document(userId).collection("goals")
+                .add(goal)
+                .addOnSuccessListener {
+                    snackbarMessage = "Goal added!"
+                    newGoalText = ""
+                    // Refetch goals
+                    refreshGoalsTrigger = !refreshGoalsTrigger
+
+                }
+                .addOnFailureListener { e -> snackbarMessage = e.localizedMessage }
+        }
+    }
+    LaunchedEffect(refreshGoalsTrigger) {
+        // Refetch goals here
+    }
+
+    // Update goal completion
+    fun updateGoalCompletion(goal: Goal, completed: Boolean) {
+        if (userId != null && goal.id != null) {
+            db.collection("users").document(userId).collection("goals").document(goal.id)
+                .update("completed", completed)
+                .addOnSuccessListener { snackbarMessage = if (completed) "Goal completed!" else "Goal marked incomplete." }
+                .addOnFailureListener { e -> snackbarMessage = e.localizedMessage }
+        }
+    }
+
+    // Remove goal
+    fun removeGoal(goal: Goal) {
+        if (userId != null && goal.id != null) {
+            db.collection("users").document(userId).collection("goals").document(goal.id)
+                .delete()
+                .addOnSuccessListener { snackbarMessage = "Goal removed!" }
+                .addOnFailureListener { e -> snackbarMessage = e.localizedMessage }
+        }
+    }
+
+    var showSnackbar by remember { mutableStateOf(false) }
+
+    // Show snackbar message
+    if (snackbarMessage != null) {
+        LaunchedEffect(snackbarMessage) {
+            snackbarHostState.showSnackbar(snackbarMessage!!)
             snackbarMessage = null
         }
     }
@@ -78,8 +154,6 @@ fun ProgressScreen(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
-
-            // Add Goal Row
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(bottom = 16.dp)
@@ -91,49 +165,32 @@ fun ProgressScreen(
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Button(
-                    onClick = {
-                        if (newGoalText.isNotBlank()) {
-                            goals = goals + Goal(newGoalText, 0f, false)
-                            newGoalText = ""
-                            snackbarMessage = "Goal added!"
-                        }
-                    }
-                ) {
-                    Text("Add")
-                }
+                Button(onClick = { addGoal() }) { Text("Add") }
             }
-
-            // Dynamic Goals List
-            if (goals.isEmpty()) {
+            if (loading) {
+                Text("Loading goals...", color = Color.Gray)
+            } else if (error != null) {
+                Text(error ?: "Error", color = Color.Red)
+            } else if (goals.isEmpty()) {
                 Text("No goals yet. Add one!", color = Color.Gray)
             } else {
-                goals.forEachIndexed { idx, goal ->
+                val (incomplete, complete) = goals.partition { !it.completed }
+                (incomplete + complete).forEach { goal ->
                     GoalProgressItem(
                         goal = goal,
-                        onCheckedChange = { checked ->
-                            goals = goals.toMutableList().also {
-                                it[idx] = it[idx].copy(completed = checked)
-                            }
-                            snackbarMessage = if (checked) "Goal completed!" else "Goal marked incomplete."
-                        },
-                        onRemove = {
-                            goals = goals.toMutableList().also { it.removeAt(idx) }
-                        }
+                        onCheckedChange = { checked -> updateGoalCompletion(goal, checked) },
+                        onRemove = { removeGoal(goal) }
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(20.dp)) // Increased spacing
                 }
             }
-
             Spacer(modifier = Modifier.height(24.dp))
-
             Text(
                 text = "Weekly Productivity",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
-
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -141,7 +198,6 @@ fun ProgressScreen(
                     .background(Color.LightGray, shape = RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                // TODO: Replace with real pie chart
                 Text("[Pie Chart Placeholder]", color = Color.DarkGray)
             }
         }
@@ -149,6 +205,7 @@ fun ProgressScreen(
 }
 
 data class Goal(
+    val id: String? = null,
     val text: String,
     val progress: Float,
     val completed: Boolean
@@ -187,11 +244,11 @@ fun GoalProgressItem(
             }
         }
         LinearProgressIndicator(
-            progress = if (goal.completed) 1f else goal.progress,
+            progress = { if (goal.completed) 1f else goal.progress },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(8.dp)
-                .padding(vertical = 4.dp)
+                .padding(vertical = 4.dp, horizontal = 10.dp),
         )
     }
 }

@@ -1,6 +1,7 @@
 package com.example.studybuddy
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,11 +18,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +46,16 @@ import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
 
+
+data class Session(
+    val id: String,
+    val subject: String,
+    val date: String,
+    val startTime: String,
+    val endTime: String,
+    val duration: String
+)
+
 @Composable
 fun HomeScreen(
     onNavigateToProgress: () -> Unit = {},
@@ -62,6 +75,16 @@ fun HomeScreen(
     var eventsLoading by remember { mutableStateOf(true) }
     var eventsError by remember { mutableStateOf<String?>(null) }
 
+    // Current Goals (only incomplete)
+    var goals by remember { mutableStateOf(listOf<Goal>()) }
+    var goalsLoading by remember { mutableStateOf(true) }
+    var goalsError by remember { mutableStateOf<String?>(null) }
+
+    // Scheduled sessions state
+    var sessions by remember { mutableStateOf(listOf<Session>()) }
+    var sessionsLoading by remember { mutableStateOf(true) }
+    var sessionsError by remember { mutableStateOf<String?>(null) }
+
     // Fetch username
     LaunchedEffect(userId) {
         usernameLoading = true
@@ -79,31 +102,107 @@ fun HomeScreen(
         }
     }
 
-    // Fetch upcoming events (for today and future)
-    LaunchedEffect(userId) {
+    // Fetch user's incomplete goals (live) - use DisposableEffect for proper cleanup
+    DisposableEffect(userId) {
+        goalsLoading = true
+        goalsError = null
+        val listener = userId?.let {
+            db.collection("users").document(it).collection("goals")
+                .whereEqualTo("completed", false)
+                .addSnapshotListener { docs, e ->
+                    if (e != null) {
+                        goalsError = e.localizedMessage
+                        goalsLoading = false
+                        return@addSnapshotListener
+                    }
+                    if (docs != null) {
+                        goals = docs.map { doc ->
+                            Goal(
+                                id = doc.id,
+                                text = doc.getString("text") ?: "",
+                                progress = doc.getDouble("progress")?.toFloat() ?: 0f,
+                                completed = doc.getBoolean("completed") ?: false
+                            )
+                        }
+                        goalsLoading = false
+                    }
+                }
+        }
+        onDispose {
+            listener?.remove()
+        }
+    }
+
+    // Fetch upcoming events (for today and future) - now with real-time updates
+    DisposableEffect(userId) {
         eventsLoading = true
         eventsError = null
-        userId?.let {
+        val listener = userId?.let {
             db.collection("events")
                 .whereEqualTo("userId", it)
                 .whereGreaterThanOrEqualTo("date", today.toString())
                 .orderBy("date", Query.Direction.ASCENDING)
                 .limit(5)
-                .get()
-                .addOnSuccessListener { docs ->
-                    upcomingEvents = docs.map { doc ->
-                        val title = doc.getString("title") ?: "Untitled"
-                        val date = doc.getString("date") ?: ""
-                        val time = doc.getString("time") ?: ""
-                        val display = if (date == today.toString()) "Today at $time" else "$date at $time"
-                        title to display
+                .addSnapshotListener { docs, e ->
+                    if (e != null) {
+                        eventsError = "Failed to load events"
+                        eventsLoading = false
+                        return@addSnapshotListener
                     }
-                    eventsLoading = false
+                    if (docs != null) {
+                        upcomingEvents = docs.map { doc ->
+                            val title = doc.getString("title") ?: "Untitled"
+                            val date = doc.getString("date") ?: ""
+                            val time = doc.getString("time") ?: ""
+                            val display = if (date == today.toString()) "Today at $time" else "$date at $time"
+                            title to display
+                        }
+                        eventsLoading = false
+                    }
                 }
-                .addOnFailureListener { e ->
-                    eventsError = "Failed to load events"
-                    eventsLoading = false
+        }
+        onDispose {
+            listener?.remove()
+        }
+    }
+
+    // Fetch user's next scheduled sessions (show up to 3 upcoming) - use DisposableEffect for live updates
+    DisposableEffect(userId) {
+        sessionsLoading = true
+        sessionsError = null
+        val listener = userId?.let {
+            db.collection("users").document(it).collection("sessions")
+                .addSnapshotListener { docs, e ->
+                    if (e != null) {
+                        sessionsError = e.localizedMessage
+                        sessionsLoading = false
+                        return@addSnapshotListener
+                    }
+                    if (docs != null) {
+                        sessions = docs.map { doc ->
+                            Session(
+                                id = doc.id,
+                                subject = doc.getString("subject") ?: "",
+                                date = doc.getString("date") ?: "",
+                                startTime = doc.getString("startTime") ?: "",
+                                endTime = doc.getString("endTime") ?: "",
+                                duration = doc.getString("duration") ?: ""
+                            )
+                        }.sortedBy { it.date }.take(3)
+                        sessionsLoading = false
+                    }
                 }
+        }
+        onDispose {
+            listener?.remove()
+        }
+    }
+
+    // Update goal completion (mark as complete and remove from Home)
+    fun updateGoalCompletion(goal: Goal, completed: Boolean) {
+        if (userId != null && goal.id != null) {
+            db.collection("users").document(userId).collection("goals").document(goal.id)
+                .update("completed", completed)
         }
     }
 
@@ -141,6 +240,95 @@ fun HomeScreen(
             }
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Show user's incomplete goals above events
+            Text("Your Goals", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            when {
+                goalsLoading -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Loading goals...", fontSize = 16.sp)
+                    }
+                }
+                goalsError != null -> {
+                    Text(goalsError ?: "", color = Color.Red, fontSize = 16.sp)
+                }
+                goals.isEmpty() -> {
+                    Text("No goals yet. Add one in Progress!", fontSize = 16.sp, color = Color.Gray)
+                }
+                else -> {
+                    LazyColumn(modifier = Modifier.heightIn(max = 120.dp)) {
+                        items(goals.size) { idx ->
+                            val goal = goals[idx]
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp) // Increased spacing
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(8.dp)
+                                ) {
+                                    Checkbox(
+                                        checked = goal.completed,
+                                        onCheckedChange = { checked ->
+                                            updateGoalCompletion(goal, checked)
+                                        }
+                                    )
+                                    Text(
+                                        goal.text,
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.padding(start = 8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Show user's next scheduled sessions
+            Text("Scheduled Sessions", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+            when {
+                sessionsLoading -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Loading sessions...", fontSize = 16.sp)
+                    }
+                }
+                sessionsError != null -> {
+                    Text(sessionsError ?: "", color = Color.Red, fontSize = 16.sp)
+                }
+                sessions.isEmpty() -> {
+                    Text("No scheduled sessions.", fontSize = 16.sp, color = Color.Gray)
+                }
+                else -> {
+                    LazyColumn(modifier = Modifier.heightIn(max = 80.dp)) {
+                        items(sessions.size) { idx ->
+                            val session = sessions[idx]
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 6.dp) // Increased spacing
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(session.subject, fontWeight = FontWeight.Medium)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("${session.date} ${session.startTime}", color = Color.Gray, fontSize = 13.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
             Text("Coming up", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
             when {
                 eventsLoading -> {
@@ -167,7 +355,7 @@ fun HomeScreen(
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
+                                    .padding(vertical = 8.dp) // Increased spacing
                             ) {
                                 Column(modifier = Modifier.padding(8.dp)) {
                                     Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium)
@@ -189,67 +377,86 @@ fun HomeScreen(
                 (1..daysInMonth).map { day -> currentMonth.atDay(day) }
             }
 
-            // Month header
-            Text(
-                text = "${currentMonth.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${currentMonth.year}",
-                modifier = Modifier.padding(8.dp),
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Medium
-            )
-            // Days of week row
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                DayOfWeek.values().forEach { dayOfWeek ->
-                    Text(
-                        text = dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()),
-                        modifier = Modifier.weight(1f),
-                        fontSize = 12.sp,
-                        color = Color.Gray,
-                        textAlign = TextAlign.Center
+            // Calendar container with border and rounded corners
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .background(
+                        color = Color.Transparent,
+                        shape = MaterialTheme.shapes.medium
                     )
-                }
-            }
-            // Calendar days grid
-            val totalGridCount = daysInMonth + firstDayOfMonth.value - 1
-            val rows = (totalGridCount / 7) + 1
-            Column {
-                var dayIndex = 0
-                for (row in 0 until rows) {
-                    Row(Modifier.fillMaxWidth()) {
-                        for (col in 0..6) {
-                            val cellIndex = row * 7 + col
-                            if (cellIndex < firstDayOfMonth.value - 1 || dayIndex >= daysList.size) {
-                                Box(modifier = Modifier.weight(1f).aspectRatio(1f)) {}
-                            } else {
-                                val date = daysList[dayIndex]
-                                val isSelected = date == selectedDate
-                                val isToday = date == today
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .aspectRatio(1f)
-                                        .padding(2.dp)
-                                        .background(
-                                            when {
-                                                isSelected -> MaterialTheme.colorScheme.primary
-                                                isToday -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f)
-                                                else -> Color.Transparent
-                                            },
-                                            shape = MaterialTheme.shapes.small
-                                        )
-                                        .clickable { selectedDate = date },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = date.dayOfMonth.toString(),
-                                        color = when {
-                                            isSelected -> Color.White
-                                            isToday -> MaterialTheme.colorScheme.primary
-                                            else -> Color.Black
-                                        },
-                                        fontSize = 16.sp
-                                    )
+                    .border(
+                        width = 2.dp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                        shape = MaterialTheme.shapes.medium
+                    )
+                    .padding(8.dp)
+            ) {
+                Column {
+                    // Month header
+                    Text(
+                        text = "${currentMonth.month.getDisplayName(TextStyle.FULL, Locale.getDefault())} ${currentMonth.year}",
+                        modifier = Modifier.padding(8.dp),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    // Days of week row
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        DayOfWeek.values().forEach { dayOfWeek ->
+                            Text(
+                                text = dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault()),
+                                modifier = Modifier.weight(1f),
+                                fontSize = 12.sp,
+                                color = Color.Gray,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                    // Calendar days grid
+                    val totalGridCount = daysInMonth + firstDayOfMonth.value - 1
+                    val rows = (totalGridCount / 7) + 1
+                    Column {
+                        var dayIndex = 0
+                        for (row in 0 until rows) {
+                            Row(Modifier.fillMaxWidth()) {
+                                for (col in 0..6) {
+                                    val cellIndex = row * 7 + col
+                                    if (cellIndex < firstDayOfMonth.value - 1 || dayIndex >= daysList.size) {
+                                        Box(modifier = Modifier.weight(1f).aspectRatio(1f)) {}
+                                    } else {
+                                        val date = daysList[dayIndex]
+                                        val isSelected = date == selectedDate
+                                        val isToday = date == today
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .aspectRatio(1f)
+                                                .padding(2.dp)
+                                                .background(
+                                                    when {
+                                                        isSelected -> MaterialTheme.colorScheme.primary
+                                                        isToday -> MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f)
+                                                        else -> Color.Transparent
+                                                    },
+                                                    shape = MaterialTheme.shapes.small
+                                                )
+                                                .clickable { selectedDate = date },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = date.dayOfMonth.toString(),
+                                                color = when {
+                                                    isSelected -> Color.White
+                                                    isToday -> MaterialTheme.colorScheme.primary
+                                                    else -> Color.Black
+                                                },
+                                                fontSize = 16.sp
+                                            )
+                                        }
+                                        dayIndex++
+                                    }
                                 }
-                                dayIndex++
                             }
                         }
                     }
