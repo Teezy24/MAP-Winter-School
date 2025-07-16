@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,25 +53,25 @@ fun SignUpScreen(
     onSignUpSuccess: () -> Unit = {},
     onNavigateToLogin: () -> Unit = {}
 ) {
-    var email by remember { mutableStateOf("") }
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var retypePassword by remember { mutableStateOf("") }
-    var showError by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf("") }
-    var emailError by remember { mutableStateOf(false) }
-    var usernameError by remember { mutableStateOf(false) }
-    var passwordError by remember { mutableStateOf(false) }
-    var retypePasswordError by remember { mutableStateOf(false) }
+    var email by rememberSaveable { mutableStateOf("") }
+    var username by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var retypePassword by rememberSaveable { mutableStateOf("") }
+    var showError by rememberSaveable { mutableStateOf(false) }
+    var errorMessage by rememberSaveable { mutableStateOf("") }
+    var emailError by rememberSaveable { mutableStateOf(false) }
+    var usernameError by rememberSaveable { mutableStateOf(false) }
+    var passwordError by rememberSaveable { mutableStateOf(false) }
+    var retypePasswordError by rememberSaveable { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     val auth = remember { FirebaseAuth.getInstance() }
     val db = remember { FirebaseFirestore.getInstance() }
 
     // Password visibility toggles
-    var passwordVisible by remember { mutableStateOf(false) }
-    var retypePasswordVisible by remember { mutableStateOf(false) }
+    var passwordVisible by rememberSaveable { mutableStateOf(false) }
+    var retypePasswordVisible by rememberSaveable { mutableStateOf(false) }
     // Loading state
-    var isLoading by remember { mutableStateOf(false) }
+    var isLoading by rememberSaveable { mutableStateOf(false) }
 
     fun isValidEmail(email: String): Boolean = email.contains("@") && email.contains(".")
     fun isValidPassword(password: String): Boolean = password.length >= 6 && password.any { it.isDigit() }
@@ -97,39 +98,62 @@ fun SignUpScreen(
         }
         isLoading = true
 
-        // --- FIX: Allow username check without requiring authentication ---
-        // Instead of checking username before sign up (which requires read permission),
-        // first create the user (so request.auth != null), then check username and write user doc.
+        // First, check if the email is already in use before creating the user
+        db.collection("users").whereEqualTo("email", email).get()
+            .addOnSuccessListener { emailDocs ->
+                if (!emailDocs.isEmpty) {
+                    errorMessage = "This email is already registered. Please use another email or log in."
+                    showError = true
+                    isLoading = false
+                    coroutineScope.launch {
+                        delay(5000)
+                        showError = false
+                    }
+                } else {
+                    // --- FIX: Allow username check without requiring authentication ---
+                    // Instead of checking username before sign up (which requires read permission),
+                    // first create the user (so request.auth != null), then check username and write user doc.
 
-        auth.createUserWithEmailAndPassword(email, password)
-            .addOnCompleteListener { task ->
-                if (task.isSuccessful) {
-                    auth.currentUser?.reload()?.addOnCompleteListener {
-                        val userId = auth.currentUser?.uid
-                        if (userId != null) {
-                            // Now user is authenticated, check if username exists
-                            db.collection("users").whereEqualTo("username", username).get()
-                                .addOnSuccessListener { docs ->
-                                    if (!docs.isEmpty) {
-                                        // Username exists, delete the just-created user and show error
-                                        auth.currentUser?.delete()
-                                        errorMessage = "Username already exists."
-                                        showError = true
-                                        usernameError = true
-                                        isLoading = false
-                                        coroutineScope.launch {
-                                            delay(5000)
-                                            showError = false
-                                        }
-                                    } else {
-                                        // Username is unique, save user doc
-                                        val user = hashMapOf("username" to username, "email" to email)
-                                        db.collection("users").document(userId).set(user)
-                                            .addOnSuccessListener {
-                                                onSignUpSuccess()
+                    auth.createUserWithEmailAndPassword(email, password)
+                        .addOnCompleteListener { task ->
+                            if (task.isSuccessful) {
+                                auth.currentUser?.reload()?.addOnCompleteListener {
+                                    val userId = auth.currentUser?.uid
+                                    if (userId != null) {
+                                        // Now user is authenticated, check if username exists
+                                        db.collection("users").whereEqualTo("username", username).get()
+                                            .addOnSuccessListener { docs ->
+                                                if (!docs.isEmpty) {
+                                                    // Username exists, delete the just-created user and show error
+                                                    auth.currentUser?.delete()
+                                                    errorMessage = "Username already exists."
+                                                    showError = true
+                                                    usernameError = true
+                                                    isLoading = false
+                                                    coroutineScope.launch {
+                                                        delay(5000)
+                                                        showError = false
+                                                    }
+                                                } else {
+                                                    // Username is unique, save user doc
+                                                    val user = hashMapOf("username" to username, "email" to email)
+                                                    db.collection("users").document(userId).set(user)
+                                                        .addOnSuccessListener {
+                                                            onSignUpSuccess()
+                                                        }
+                                                        .addOnFailureListener { e ->
+                                                            errorMessage = e.localizedMessage ?: "Failed to save user."
+                                                            showError = true
+                                                            isLoading = false
+                                                            coroutineScope.launch {
+                                                                delay(5000)
+                                                                showError = false
+                                                            }
+                                                        }
+                                                }
                                             }
                                             .addOnFailureListener { e ->
-                                                errorMessage = e.localizedMessage ?: "Failed to save user."
+                                                errorMessage = e.localizedMessage ?: "Failed to check username."
                                                 showError = true
                                                 isLoading = false
                                                 coroutineScope.launch {
@@ -139,25 +163,30 @@ fun SignUpScreen(
                                             }
                                     }
                                 }
-                                .addOnFailureListener { e ->
-                                    errorMessage = e.localizedMessage ?: "Failed to check username."
-                                    showError = true
-                                    isLoading = false
-                                    coroutineScope.launch {
-                                        delay(5000)
-                                        showError = false
-                                    }
+                            } else {
+                                val errorMsg = task.exception?.localizedMessage
+                                if (errorMsg?.contains("email address is already in use") == true) {
+                                    errorMessage = "This email is already registered. Please use another email or log in."
+                                } else {
+                                    errorMessage = errorMsg ?: "Sign up failed."
                                 }
+                                showError = true
+                                isLoading = false
+                                coroutineScope.launch {
+                                    delay(5000)
+                                    showError = false
+                                }
+                            }
                         }
-                    }
-                } else {
-                    errorMessage = task.exception?.localizedMessage ?: "Sign up failed."
-                    showError = true
-                    isLoading = false
-                    coroutineScope.launch {
-                        delay(5000)
-                        showError = false
-                    }
+                }
+            }
+            .addOnFailureListener { e ->
+                errorMessage = e.localizedMessage ?: "Failed to check email."
+                showError = true
+                isLoading = false
+                coroutineScope.launch {
+                    delay(5000)
+                    showError = false
                 }
             }
     }
